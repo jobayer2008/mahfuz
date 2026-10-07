@@ -1,1 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ULTRA MATRIX</title>
 
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    font-family:monospace;
+}
+
+canvas{
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100%;
+}
+
+/* Green glow around the screen */
+body{
+    box-shadow:
+        inset 0 0 80px rgba(0,255,60,.25);
+}
+
+/* Center terminal */
+.panel{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    width:min(90%,760px);
+    padding:22px;
+    background:rgba(0,8,0,.78);
+    border:1px solid #00ff41;
+    box-shadow:
+        0 0 15px #00ff41,
+        inset 0 0 30px rgba(0,255,65,.15);
+    color:#00ff41;
+    z-index:10;
+    text-shadow:0 0 7px #00ff41;
+}
+
+.header{
+    display:flex;
+    justify-content:space-between;
+    border-bottom:1px solid #00ff41;
+    padding-bottom:10px;
+    margin-bottom:12px;
+    font-size:13px;
+}
+
+.log{
+    height:220px;
+    overflow:hidden;
+    font-size:clamp(11px,1.7vw,16px);
+    line-height:1.55;
+}
+
+.log div{
+    white-space:nowrap;
+}
+
+.red{
+    color:#ff3030;
+}
+
+.yellow{
+    color:#ffff00;
+}
+
+.white{
+    color:#ffffff;
+}
+
+.green{
+    color:#00ff41;
+}
+
+.progress{
+    margin-top:15px;
+    border:1px solid #00ff41;
+    height:18px;
+    padding:2px;
+}
+
+.progress-bar{
+    width:0%;
+    height:100%;
+    background:#00ff41;
+    box-shadow:0 0 12px #00ff41;
+}
+
+.status{
+    margin-top:8px;
+    font-size:12px;
+}
+
+.big{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%) scale(.5);
+    color:#00ff41;
+    font-weight:bold;
+    text-align:center;
+    font-size:clamp(35px,9vw,100px);
+    text-shadow:
+        0 0 5px #00ff41,
+        0 0 20px #00ff41,
+        0 0 50px #00ff41;
+    z-index:20;
+    opacity:0;
+    pointer-events:none;
+    transition:.4s;
+}
+
+.big.show{
+    opacity:1;
+    transform:translate(-50%,-50%) scale(1);
+}
+
+.big span{
+    display:block;
+    font-size:clamp(14px,3vw,28px);
+    margin-top:15px;
+}
+
+.hint{
+    position:fixed;
+    bottom:10px;
+    left:50%;
+    transform:translateX(-50%);
+    color:#00aa2a;
+    font-size:11px;
+    z-index:30;
+    opacity:.7;
+}
+
+/* Scanline effect */
+.scan{
+    position:fixed;
+    inset:0;
+    z-index:5;
+    pointer-events:none;
+    background:
+        repeating-linear-gradient(
+            to bottom,
+            transparent 0px,
+            transparent 3px,
+            rgba(0,255,65,.025) 4px
+        );
+}
+
+/* Glitch */
+.glitch{
+    animation:glitch .12s infinite;
+}
+
+@keyframes glitch{
+    0%{transform:translate(-50%,-50%)}
+    50%{transform:translate(calc(-50% + 2px),-50%)}
+    100%{transform:translate(-50%,-50%)}
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="matrix"></canvas>
+
+<div class="scan"></div>
+
+<div class="panel" id="panel">
+
+    <div class="header">
+        <span>█ ULTRA TERMINAL v9.9</span>
+        <span id="clock">00:00:00</span>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="progress">
+        <div class="progress-bar" id="bar"></div>
+    </div>
+
+    <div class="status" id="status">
+        INITIALIZING SYSTEM...
+    </div>
+
+</div>
+
+<div class="big" id="big">
+    ACCESS GRANTED 😈
+    <span>Just kidding 😂</span>
+</div>
+
+<div class="hint">
+    CLICK ANYWHERE FOR CHAOS ⚡
+</div>
+
+
+<script>
+
+/* =====================================================
+   MATRIX RAIN
+===================================================== */
+
+const canvas = document.getElementById("matrix");
+const ctx = canvas.getContext("2d");
+
+let W,H;
+let fontSize;
+let columns;
+let drops=[];
+
+const chars =
+"01ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" +
+"0123456789" +
+"@#$%&*<>[]{}" +
+"/\\|+=-_~" +
+"アイウエオカキクケコサシスセソタチツテト" +
+"▓▒░█";
+
+function resize(){
+
+    W=window.innerWidth;
+    H=window.innerHeight;
+
+    const dpr=window.devicePixelRatio || 1;
+
+    canvas.width=W*dpr;
+    canvas.height=H*dpr;
+
+    canvas.style.width=W+"px";
+    canvas.style.height=H+"px";
+
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    /* Smaller font = MUCH MORE CODE */
+    fontSize=Math.max(9,Math.min(15,W/120));
+
+    columns=Math.floor(W/fontSize);
+
+    drops=[];
+
+    for(let i=0;i<columns;i++){
+
+        drops[i]=
+            Math.random()*-150;
+
+    }
+}
+
+resize();
+
+window.addEventListener("resize",resize);
+
+
+/* Very fast matrix */
+
+function draw(){
+
+    ctx.fillStyle="rgba(0,0,0,0.045)";
+    ctx.fillRect(0,0,W,H);
+
+    ctx.font=fontSize+"px monospace";
+
+    for(let i=0;i<columns;i++){
+
+        const char=
+            chars[Math.floor(Math.random()*chars.length)];
+
+        const x=i*fontSize;
+        const y=drops[i]*fontSize;
+
+        /* Random bright heads */
+        if(Math.random()>.94){
+
+            ctx.fillStyle="#ffffff";
+
+        }else{
+
+            ctx.fillStyle=
+                Math.random()>.5
+                ?"#00ff41"
+                :"#00cc33";
+
+        }
+
+        ctx.shadowColor="#00ff41";
+        ctx.shadowBlur=5;
+
+        ctx.fillText(char,x,y);
+
+        ctx.shadowBlur=0;
+
+        /* VERY FAST */
+        drops[i]+=
+            1.5+
+            Math.random()*2.8;
+
+        if(y>H && Math.random()>.96){
+
+            drops[i]=
+                Math.random()*-100;
+
+        }
+    }
+
+    requestAnimationFrame(draw);
+}
+
+draw();
+
+
+/* =====================================================
+   FAKE HACKING TERMINAL
+===================================================== */
+
+const log=document.getElementById("log");
+
+const fakeLines=[
+
+"> Booting kernel ................. OK",
+
+"> Loading encrypted modules ...... OK",
+
+"> Establishing secure tunnel ...... OK",
+
+"> Scanning network ...............",
+
+"> Found host: 192.168.1.107",
+
+"> PORT 21 ................. OPEN",
+
+"> PORT 22 ................. OPEN",
+
+"> PORT 80 ................. OPEN",
+
+"> PORT 443 ................ OPEN",
+
+"> PORT 8080 ............... OPEN",
+
+"> Firewall detected ..............",
+
+"> Bypassing firewall .............",
+
+"> Firewall bypass ............ SUCCESS",
+
+"> Injecting payload ..............",
+
+"> Payload size: 847.32 KB",
+
+"> Encrypting packets .............",
+
+"> Encryption: AES-256",
+
+"> Generating secure key ..........",
+
+"> Key generated .................",
+
+"> Searching database .............",
+
+"> 4,281 files detected",
+
+"> Downloading files ..............",
+
+"> Download speed: 847 MB/s",
+
+"> Decrypting archive .............",
+
+"> Password cracking ..............",
+
+"> Attempt #0001 ........ FAILED",
+
+"> Attempt #0002 ........ FAILED",
+
+"> Attempt #0003 ........ SUCCESS",
+
+"> ROOT ACCESS REQUESTED",
+
+"> ROOT ACCESS ............ GRANTED",
+
+"> SYSTEM CONTROL ........ 100%",
+
+"> WARNING: TOO MUCH POWER",
+
+"> Launching secret protocol...",
+
+"> Protocol 7 ............ ACTIVE",
+
+"> ERROR: Human detected 😂",
+
+"> Continuing anyway .............",
+
+"> HACKING THE MATRIX ............",
+
+"> MATRIX CONNECTION ........ OK",
+
+"> SYSTEM OVERRIDE ...............",
+
+"> ACCESS LEVEL: GOD MODE",
+
+"> Uploading memes ...............",
+
+"> Meme database ................. READY",
+
+"> Downloading coffee ............",
+
+"> Coffee level: 100% ☕",
+
+"> Brain.exe ..................... ONLINE",
+
+"> Common sense.exe .............. NOT FOUND 😂",
+
+"> Mission complete .............."
+
+];
+
+let lineIndex=0;
+
+function addLine(){
+
+    const div=document.createElement("div");
+
+    let text=fakeLines[lineIndex%fakeLines.length];
+
+    div.textContent=text;
+
+    const r=Math.random();
+
+    if(r<.08){
+        div.className="red";
+    }
+    else if(r<.16){
+        div.className="yellow";
+    }
+    else if(r<.25){
+        div.className="white";
+    }
+    else{
+        div.className="green";
+    }
+
+    log.appendChild(div);
+
+    /* Keep MANY lines visible */
+    if(log.children.length>13){
+        log.removeChild(log.firstChild);
+    }
+
+    lineIndex++;
+
+    /* SUPER FAST */
+    setTimeout(addLine,35+Math.random()*90);
+}
+
+addLine();
+
+
+/* =====================================================
+   PROGRESS BAR
+===================================================== */
+
+const bar=document.getElementById("bar");
+const status=document.getElementById("status");
+
+let progress=0;
+
+const statusTexts=[
+    "SCANNING NETWORK...",
+    "BYPASSING FIREWALL...",
+    "DECRYPTING DATA...",
+    "INJECTING CODE...",
+    "DOWNLOADING SECRET FILES...",
+    "ACCESSING ROOT...",
+    "OVERRIDING SYSTEM...",
+    "ALMOST DONE..."
+];
+
+setInterval(()=>{
+
+    progress+=Math.random()*5;
+
+    if(progress>=100){
+
+        progress=0;
+
+        status.textContent=
+            "SYSTEM OVERRIDE COMPLETE 😈";
+
+    }else{
+
+        status.textContent=
+            statusTexts[
+                Math.floor(
+                    Math.random()*statusTexts.length
+                )
+            ]+
+            " "+
+            Math.floor(progress)+"%";
+
+    }
+
+    bar.style.width=progress+"%";
+
+},180);
+
+
+/* =====================================================
+   CLOCK
+===================================================== */
+
+function updateClock(){
+
+    const now=new Date();
+
+    document.getElementById("clock")
+        .textContent=
+        now.toLocaleTimeString();
+
+}
+
+setInterval(updateClock,1000);
+updateClock();
+
+
+/* =====================================================
+   RANDOM BIG MESSAGES
+===================================================== */
+
+const big=document.getElementById("big");
+
+const messages=[
+
+["SYSTEM HACKED 😈","Just kidding 😂"],
+
+["ACCESS GRANTED 🔓","Welcome, hacker 😎"],
+
+["ROOT ACCESS 👑","You are too powerful!"],
+
+["WARNING ⚠️","Your computer is now... hungry 😂"],
+
+["MISSION COMPLETE 🚀","Nobody knows what happened!"],
+
+["MATRIX ONLINE 🟢","Wake up, Neo... 😂"],
+
+["GOD MODE 👽","This is getting ridiculous!"]
+
+];
+
+function showMessage(){
+
+    const m=
+        messages[
+            Math.floor(Math.random()*messages.length)
+        ];
+
+    big.innerHTML=
+        m[0]+
+        "<span>"+
+        m[1]+
+        "</span>";
+
+    big.classList.add("show","glitch");
+
+    setTimeout(()=>{
+
+        big.classList.remove("show","glitch");
+
+    },1800);
+
+}
+
+/* First surprise */
+
+setTimeout(showMessage,8500);
+
+
+/* =====================================================
+   CLICK CHAOS
+===================================================== */
+
+document.addEventListener("click",()=>{
+
+    showMessage();
+
+    /* Flash */
+    document.body.animate(
+        [
+            {filter:"brightness(1)"},
+            {filter:"brightness(3)"},
+            {filter:"brightness(1)"}
+        ],
+        {
+            duration:250
+        }
+    );
+
+});
+
+
+/* =====================================================
+   EASTER EGG
+===================================================== */
+
+console.log(
+"%c ULTRA MATRIX ONLINE ",
+"background:#000;color:#00ff41;font-size:25px"
+);
+
+console.log(
+"%c Nice try hacker 😂 ",
+"background:#000;color:#ff3333;font-size:18px"
+);
+
+</script>
+
+</body>
+  </html>
